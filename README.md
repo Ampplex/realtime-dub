@@ -180,6 +180,43 @@ worth it on a GPU box.
 
 ## Deploying
 
+Deployed from the `Dockerfile`; the image carries ffmpeg and bakes the Whisper,
+demucs and Piper weights so the first request does not wait on a download.
+
+**Not deployable to Vercel** (or any serverless platform), for four independent
+reasons: torch alone is ~500MB against a 250MB function limit; ffmpeg is shelled
+out to 9 times and is not in the runtime; sessions live in process memory with
+background threads that keep working for minutes after the response is sent; and
+request bodies are capped at 4.5MB, well under a real video upload. It needs a
+container with a persistent process.
+
+```sh
+docker build -t realtime-dub .
+docker run -p 8500:8500 --env-file .env realtime-dub
+```
+
+On Render, `render.yaml` is a blueprint — point **New > Blueprint** at this repo
+and set `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` in the dashboard. Any other
+container host (Railway, Fly.io, Cloud Run) works the same way from the Dockerfile.
+
+**Memory is the sizing constraint,** not CPU: demucs, Whisper and Kokoro are all
+resident at once, so a 512MB instance cannot start. 2GB is the floor, 4GB is
+comfortable — which rules out the usual free tiers.
+
+Run exactly **one** worker (`wsgi.py` explains why): sessions are a module-level
+dict, so a second worker would answer polls for sessions it has never seen.
+Concurrency comes from threads instead.
+
+### Uploads and the local-path route
+
+A hosted instance accepts **uploads only**. The `path=` route that the CLI-ish
+local flow uses reads an arbitrary server path and hands the bytes straight back
+via `/api/session/<id>/video`, so on a public host it is arbitrary file
+disclosure — `path=/proc/self/environ` would surrender the AWS keys. It is off
+unless `ALLOW_LOCAL_PATH=1`, which belongs on your laptop and nowhere else.
+
+## Notes on the original deployment sketch
+
 Piper and faster-whisper are both CPU-only and Linux-friendly, so a container works.
 Three things to change:
 

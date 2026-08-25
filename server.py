@@ -29,6 +29,9 @@ def _no_cache(resp):
     return resp
 app.config["MAX_CONTENT_LENGTH"] = 2 * 1024 ** 3       # 2 GB uploads
 
+# Local-path loading is a dev affordance; hosted deployments accept uploads only.
+ALLOW_LOCAL_PATH = os.environ.get("ALLOW_LOCAL_PATH", "0") == "1"
+
 SESSIONS: dict[str, DubSession] = {}
 CFG = {"model_size": "base", "buffer": 8.0, "tts": "auto", "translator": "auto",
        "separate": True, "sep_device": "cpu"}
@@ -36,7 +39,8 @@ CFG = {"model_size": "base", "buffer": 8.0, "tts": "auto", "translator": "auto",
 
 @app.get("/")
 def index():
-    return render_template("index.html", buffer_seconds=CFG["buffer"])
+    return render_template("index.html", buffer_seconds=CFG["buffer"],
+                           allow_local_path=ALLOW_LOCAL_PATH)
 
 
 @app.post("/api/session")
@@ -49,11 +53,18 @@ def create_session():
         f = request.files["file"]
         video = UPLOADS / f"{sid}_{Path(f.filename or 'video.mp4').name}"
         f.save(video)
-    else:
+    elif ALLOW_LOCAL_PATH:
+        # Reading an arbitrary server path is a local-dev convenience ONLY. Left on in
+        # a hosted deployment it is arbitrary file disclosure: the file is handed
+        # straight back by /api/session/<sid>/video, so `path=/proc/self/environ`
+        # would surrender the AWS credentials. Off unless explicitly enabled.
         raw = (request.form.get("path") or (request.json or {}).get("path", "")).strip()
         video = Path(raw).expanduser()
         if not video.exists():
             return jsonify({"error": f"No such file: {video}"}), 400
+    else:
+        return jsonify({"error": "Upload a video file — this server does not read "
+                                 "local paths."}), 400
 
     source_lang = request.form.get("source_lang") or "ko"
     try:
@@ -148,8 +159,8 @@ def warm_models() -> None:
 
 def main() -> None:
     p = argparse.ArgumentParser(description="Realtime Korean->Hindi/English dubbing")
-    p.add_argument("--port", type=int, default=8500)
-    p.add_argument("--host", default="127.0.0.1")
+    p.add_argument("--port", type=int, default=int(os.environ.get("PORT", 8500)))
+    p.add_argument("--host", default=os.environ.get("HOST", "127.0.0.1"))
     p.add_argument("--model", default="base",
                    help="whisper size: tiny/base/small (base is fastest AND best-segmented)")
     p.add_argument("--buffer", type=float, default=4.0,

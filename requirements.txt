@@ -1,7 +1,27 @@
-boto3==1.43.78
-ctranslate2==4.8.1
-faster-whisper==1.2.1
+# Web
 Flask==3.1.3
-onnxruntime==1.23.2
-piper-tts==1.7.0
+gunicorn==23.0.0
+
+# Translation (AWS Bedrock) + HTTP
+boto3==1.43.78
 requests==2.34.2
+
+# ASR
+faster-whisper==1.2.1
+ctranslate2==4.8.1
+
+# TTS backends: Piper (ONNX, local) and Kokoro (local, used for Hindi male,
+# which Polly does not offer)
+piper-tts==1.7.0
+onnxruntime==1.23.2
+kokoro==0.9.4
+misaki==0.9.4
+
+# Vocal separation. Imported by dubber/separate.py but previously missing from
+# this file, so a fresh install could import-error at runtime rather than at setup.
+demucs==4.1.0
+torch==2.13.0
+torchaudio==2.11.0
+
+soundfile==0.14.0
+numpy==2.2.6

@@ -1,0 +1,8 @@
+.venv/
+work/
+__pycache__/
+*.pyc
+.env
+.git/
+.gitignore
+voices/*.onnx

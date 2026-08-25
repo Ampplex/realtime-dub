@@ -17,11 +17,13 @@
       <button id="pick-btn" class="pick">Choose video…</button>
       <input id="file" type="file" accept="video/*,.mp4,.mkv,.mov,.webm,.avi" hidden>
     </div>
+    {% if allow_local_path %}
     <div class="or"><span>or</span></div>
     <div class="row">
       <input id="path" type="text" placeholder="/path/to/korean-video.mp4">
       <button id="load-btn">Load</button>
     </div>
+    {% endif %}
     <p class="hint">you can also drop a file anywhere on this page</p>
     <p id="upname" class="hint" hidden></p>
     <p id="load-err" class="err" hidden></p>

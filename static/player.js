@@ -72,12 +72,17 @@ async function createSession(body, isForm) {
   }
 }
 
-$("load-btn").onclick = () => {
-  const p = $("path").value.trim();
-  if (p) createSession({ path: p }, false);
-};
+if ($("load-btn")) {
+  $("load-btn").onclick = () => {
+    const p = $("path").value.trim();
+    if (p) createSession({ path: p }, false);
+  };
+}
 
 // click-to-browse upload
+// Chrome restores a file input across a reload and fires `change`, which would
+// re-upload and re-dub the previous video unasked. Start every load from empty.
+$("file").value = "";
 $("pick-btn").onclick = () => $("file").click();
 $("file").onchange = () => {
   const f = $("file").files[0];
@@ -156,6 +161,7 @@ function render() {
       + ` · need ${BUFFER}s to start · ${session.translator} + ${session.tts}`;
   }
 
+  const q = lang === "ko" ? "hi" : lang;
   $("diag").textContent = manifest.segments.slice(-14).map((s) =>
     `[${s.start.toFixed(2)}-${s.end.toFixed(2)}] slot ${(s.end - s.start).toFixed(2)}s `
     + `dub ${s.dur.toFixed(2)}s x${s.tempo.toFixed(2)}\n   ko: ${s.source_text}\n   ${q}: ${s.text}`

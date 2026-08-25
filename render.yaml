@@ -1,0 +1,33 @@
+# Render blueprint. Deploy with: New > Blueprint > point at this repo.
+#
+# Sizing note: the models are resident in RAM (demucs htdemucs + whisper base int8 +
+# kokoro) and demucs is the memory peak. A 512MB instance cannot load them, so the
+# free tier is not an option here — `standard` (2GB) is the realistic floor and
+# `pro` (4GB) is the comfortable one.
+services:
+  - type: web
+    name: realtime-dub
+    runtime: docker
+    plan: standard
+    region: oregon
+    healthCheckPath: /
+    autoDeploy: true
+    envVars:
+      # Set these in the Render dashboard — never commit them.
+      - key: AWS_ACCESS_KEY_ID
+        sync: false
+      - key: AWS_SECRET_ACCESS_KEY
+        sync: false
+      - key: AWS_REGION
+        value: us-west-2
+      - key: BEDROCK_MODEL_ID
+        value: mistral.mistral-large-3-675b-instruct
+      - key: TTS_BACKEND
+        value: polly
+      - key: WHISPER_MODEL
+        value: base
+      - key: BUFFER_SECONDS
+        value: "4"
+      # Uploads only. Enabling this on a public host is arbitrary file disclosure.
+      - key: ALLOW_LOCAL_PATH
+        value: "0"
