@@ -49,15 +49,57 @@ const video = $("video");
 
 // ------------------------------------------------------------------ loading
 
-async function createSession(body, isForm) {
+function fmtMB(bytes) { return (bytes / 1048576).toFixed(1) + " MB"; }
+
+function setProgress(pct, label) {
+  const bar = $("upbar"), fill = $("upfill"), txt = $("upname");
+  if (bar) bar.hidden = false;
+  if (fill) fill.style.width = Math.max(0, Math.min(100, pct)) + "%";
+  if (txt) { txt.hidden = false; txt.textContent = label; }
+}
+
+// fetch() cannot report upload progress — it exposes nothing until the whole body
+// is sent, which is why a large upload looked identical to a hung one. XHR does.
+function uploadWithProgress(fd, name, size) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", "/api/session");
+    xhr.upload.onprogress = (e) => {
+      if (!e.lengthComputable) { setProgress(0, `uploading ${name}…`); return; }
+      const pct = (e.loaded / e.total) * 100;
+      setProgress(pct, `uploading ${name} — ${pct.toFixed(0)}%  (${fmtMB(e.loaded)} / ${fmtMB(e.total)})`);
+    };
+    // Bytes are all sent, but the server still has to write the file and probe it.
+    xhr.upload.onload = () => setProgress(100, `processing ${name} (${fmtMB(size)})…`);
+    xhr.onload = () => {
+      let data = {};
+      try { data = JSON.parse(xhr.responseText); } catch { /* non-JSON error page */ }
+      if (xhr.status >= 200 && xhr.status < 300) resolve(data);
+      else reject(new Error(data.error || `Upload failed — HTTP ${xhr.status}`));
+    };
+    xhr.onerror = () => reject(new Error("Network error during upload"));
+    xhr.onabort = () => reject(new Error("Upload cancelled"));
+    xhr.send(fd);
+  });
+}
+
+async function createSession(body, isForm, file) {
+  // The path row is absent on a hosted deploy, so load-btn may not exist. Touching
+  // it unguarded threw before the request was ever sent, which stranded the upload
+  // at "uploading…" forever.
+  const btn = $("load-btn");
   $("load-err").hidden = true;
-  $("load-btn").disabled = true;
-  $("load-btn").textContent = "Loading…";
+  if (btn) { btn.disabled = true; btn.textContent = "Loading…"; }
   try {
-    const res = await fetch("/api/session", isForm ? { method: "POST", body }
-      : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || "Could not start a session");
+    let data;
+    if (isForm) {
+      data = await uploadWithProgress(body, file ? file.name : "video", file ? file.size : 0);
+    } else {
+      const res = await fetch("/api/session",
+        { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Could not start a session");
+    }
     session = data;
     video.src = data.video_url;
     $("stage").hidden = false;
@@ -66,9 +108,10 @@ async function createSession(body, isForm) {
   } catch (e) {
     $("load-err").textContent = String(e.message || e);
     $("load-err").hidden = false;
+    if ($("upbar")) $("upbar").hidden = true;
+    if ($("upname")) $("upname").hidden = true;
   } finally {
-    $("load-btn").disabled = false;
-    $("load-btn").textContent = "Load";
+    if (btn) { btn.disabled = false; btn.textContent = "Load"; }
   }
 }
 
@@ -87,12 +130,11 @@ $("pick-btn").onclick = () => $("file").click();
 $("file").onchange = () => {
   const f = $("file").files[0];
   if (!f) return;
-  $("upname").textContent = `uploading ${f.name} (${(f.size / 1048576).toFixed(1)} MB)…`;
-  $("upname").hidden = false;
+  setProgress(0, `uploading ${f.name} (${fmtMB(f.size)})…`);
   const fd = new FormData();
   fd.append("file", f);
   fd.append("source_lang", "ko");
-  createSession(fd, true);
+  createSession(fd, true, f);
 };
 
 // drag + drop
@@ -105,8 +147,9 @@ addEventListener("drop", (e) => {
   e.preventDefault(); dragDepth = 0; drop.classList.remove("on");
   const f = e.dataTransfer.files[0];
   if (!f) return;
+  setProgress(0, `uploading ${f.name} (${fmtMB(f.size)})…`);
   const fd = new FormData(); fd.append("file", f); fd.append("source_lang", "ko");
-  createSession(fd, true);
+  createSession(fd, true, f);
 });
 
 // ------------------------------------------------------------------ polling

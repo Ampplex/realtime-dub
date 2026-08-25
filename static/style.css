@@ -56,3 +56,20 @@ background:var(--card);border:1px solid var(--line);border-radius:10px}
 .bedbar input[type=range]{flex:1;accent-color:var(--acc)}
 .bedbar output{font-size:13px;color:var(--mut);min-width:3.2em;text-align:right;
 font-variant-numeric:tabular-nums}
+
+/* Upload progress. fetch() gives no upload events, so this is driven by XHR;
+   without it a slow upload is indistinguishable from a hung one. */
+.upbar {
+  height: 6px;
+  margin: 14px 0 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, .09);
+  overflow: hidden;
+}
+.upfill {
+  height: 100%;
+  width: 0;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #6c6cf0, #8f7bff);
+  transition: width .18s ease-out;
+}
