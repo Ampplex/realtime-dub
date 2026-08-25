@@ -179,16 +179,23 @@ function render() {
   for (const b of document.querySelectorAll(".lang")) {
     const l = b.dataset.lang;
     b.classList.toggle("active", l === lang);
-    // Never disable: a slow TTS backend must not become a lockout. Switching is
-    // always permitted; if that language has not been voiced up to the current
-    // position yet, the bed keeps playing and dubbed lines join as they arrive.
-    b.disabled = false;
     const em = b.querySelector("em");
-    if (l !== "ko") {
-      const secs = (manifest.ready_all || {})[l] ?? 0;
-      em.textContent = manifest.complete ? "dubbed"
-        : (secs >= video.currentTime + 1 ? "dubbed" : `${secs.toFixed(0)}s ready`);
-    }
+
+    if (l === "ko") { b.disabled = false; continue; }
+
+    const secs = (manifest.ready_all || {})[l] ?? 0;
+    // Disabled ONLY while there is literally nothing voiced yet. Selecting a
+    // language with zero seconds gives silence and no way to tell whether it is
+    // broken or still working, so say "buffering" instead. Past one second this
+    // releases and never re-latches: a merely SLOW backend must not become a
+    // lockout, which is why the gate is at zero rather than at the playhead.
+    const buffering = !manifest.complete && secs < 1;
+    b.disabled = buffering;
+    b.classList.toggle("buffering", buffering);
+
+    em.textContent = buffering ? "buffering…"
+      : manifest.complete ? "dubbed"
+      : (secs >= video.currentTime + 1 ? "dubbed" : `${secs.toFixed(0)}s ready`);
   }
 
   $("bedbar").hidden = lang === "ko";

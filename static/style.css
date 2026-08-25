@@ -73,3 +73,9 @@ font-variant-numeric:tabular-nums}
   background: linear-gradient(90deg, #6c6cf0, #8f7bff);
   transition: width .18s ease-out;
 }
+
+/* A language with nothing voiced yet: unselectable, and it says so. Clears for
+   good once one second exists. */
+.lang:disabled { opacity: .55; cursor: not-allowed; }
+.lang.buffering em { color: var(--mut); animation: pulse 1.1s ease-in-out infinite; }
+@keyframes pulse { 0%, 100% { opacity: .45 } 50% { opacity: 1 } }
