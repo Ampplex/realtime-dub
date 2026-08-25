@@ -15,11 +15,11 @@ services:
     healthCheckPath: /
     autoDeploy: true
     envVars:
-      # Set these in the Render dashboard — never commit them.
-      - key: AWS_ACCESS_KEY_ID
-        sync: false
-      - key: AWS_SECRET_ACCESS_KEY
-        sync: false
+      # AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY are deliberately NOT declared
+      # here. Declared as `sync: false` they are required at creation time and the
+      # blueprint refuses to create the service until they are filled in. Add them
+      # by hand in the service's Environment tab after it exists; the app reads
+      # them straight from the environment via boto3.
       - key: AWS_REGION
         value: us-west-2
       - key: BEDROCK_MODEL_ID
