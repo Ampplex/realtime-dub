@@ -1,0 +1,6 @@
+.env
+.venv/
+voices/*.onnx
+work/
+__pycache__/
+*.pyc

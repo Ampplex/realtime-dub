@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>realtime dub</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<main>
+  <header>
+    <h1>realtime dub</h1>
+    <p class="sub">Korean video &rarr; live Hindi or English dub</p>
+  </header>
+
+  <section class="card" id="load-card">
+    <div class="row">
+      <button id="pick-btn" class="pick">Choose video…</button>
+      <input id="file" type="file" accept="video/*,.mp4,.mkv,.mov,.webm,.avi" hidden>
+    </div>
+    <div class="or"><span>or</span></div>
+    <div class="row">
+      <input id="path" type="text" placeholder="/path/to/korean-video.mp4">
+      <button id="load-btn">Load</button>
+    </div>
+    <p class="hint">you can also drop a file anywhere on this page</p>
+    <p id="upname" class="hint" hidden></p>
+    <p id="load-err" class="err" hidden></p>
+  </section>
+
+  <section id="stage" hidden>
+    <div class="player">
+      <video id="video" controls playsinline></video>
+    </div>
+
+    <div class="langbar">
+      <span class="langbar-label">Audio</span>
+      <div class="langs">
+        <button class="lang active" data-lang="ko">Korean <em>original</em></button>
+        <button class="lang" data-lang="hi">हिन्दी <em>dubbed</em></button>
+        <button class="lang" data-lang="en">English <em>dubbed</em></button>
+      </div>
+    </div>
+
+    <div class="bedbar" id="bedbar" hidden>
+      <label for="bed">Background music &amp; effects</label>
+      <input id="bed" type="range" min="0" max="100" value="55">
+      <output id="bedval">55%</output>
+    </div>
+
+    <div class="status">
+      <div class="bufwrap"><div class="buf" id="buf"></div></div>
+      <p id="status">Preparing…</p>
+    </div>
+
+    <p id="caption" class="caption"></p>
+
+    <details class="diag">
+      <summary>Pipeline</summary>
+      <div id="diag"></div>
+    </details>
+  </section>
+</main>
+<div id="drop"><span>Drop a video to dub</span></div>
+<script>window.BUFFER_SECONDS = {{ buffer_seconds }};</script>
+<script src="/static/player.js"></script>
+</body>
+</html>

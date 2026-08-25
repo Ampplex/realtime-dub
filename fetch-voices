@@ -1,0 +1,22 @@
+#!/bin/sh
+# Download Piper voices. Uses --remove-on-error so a truncated download can never
+# be left behind masquerading as a valid model, and verifies the file parses.
+set -e
+DIR=$(cd "$(dirname "$0")" && pwd)/voices
+mkdir -p "$DIR"
+B=https://huggingface.co/rhasspy/piper-voices/resolve/main
+get() {
+  for ext in onnx onnx.json; do
+    f="$DIR/$1.$ext"
+    if [ -f "$f" ] && [ "$(wc -c <"$f")" -gt 1000 ]; then continue; fi
+    echo "  fetching $1.$ext"
+    curl -sL -f --retry 3 --retry-delay 2 --remove-on-error -o "$f" "$B/$2/$1.$ext" \
+      || { echo "  FAILED $1.$ext"; rm -f "$f"; return 1; }
+  done
+  echo "  ok $1 ($(du -h "$DIR/$1.onnx" | cut -f1))"
+}
+get hi_IN-pratham-medium    hi/hi_IN/pratham/medium      # male
+get hi_IN-priyamvada-medium hi/hi_IN/priyamvada/medium   # female
+get en_US-ryan-medium       en/en_US/ryan/medium         # male
+get en_US-lessac-medium     en/en_US/lessac/medium       # female
+echo "voices ready in $DIR"

@@ -1,0 +1,4 @@
+#!/bin/sh
+DIR=$(cd "$(dirname "$0")" && pwd)
+[ -f "$DIR/.env" ] && { set -a; . "$DIR/.env"; set +a; }
+exec "$DIR/.venv/bin/python" "$DIR/server.py" "$@"
