@@ -1,0 +1,14 @@
+# Everything in the core set, plus the torch-backed extras.
+-r requirements.txt
+
+# Vocal separation. ~500MB installed and the reason a full build cannot fit on a
+# small instance. Without it the pipeline ducks the original rather than removing
+# it, so the Korean dialogue stays faintly audible under the dub.
+demucs==4.1.0
+torch==2.13.0
+torchaudio==2.11.0
+
+# Kokoro: more natural than Piper and the only source of a Hindi male voice when
+# TTS is Polly. Also torch-backed.
+kokoro==0.9.4
+misaki==0.9.4

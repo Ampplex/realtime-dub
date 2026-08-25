@@ -1,14 +1,16 @@
 # Render blueprint. Deploy with: New > Blueprint > point at this repo.
 #
-# Sizing note: the models are resident in RAM (demucs htdemucs + whisper base int8 +
-# kokoro) and demucs is the memory peak. A 512MB instance cannot load them, so the
-# free tier is not an option here — `standard` (2GB) is the realistic floor and
-# `pro` (4GB) is the comfortable one.
+# Free-tier configuration. 512MB cannot hold demucs+torch, so separation is off and
+# TTS is Piper (ONNX, no torch). The trade-off is that the original Korean dialogue
+# is ducked under the dub rather than removed — voice-over style, not a clean dub.
+#
+# For the full pipeline, move to a 2GB+ plan and set: plan: standard,
+# SEPARATE=1, TTS_BACKEND=polly, and build with --build-arg WITH_SEPARATION=1.
 services:
   - type: web
     name: realtime-dub
     runtime: docker
-    plan: standard
+    plan: free
     region: oregon
     healthCheckPath: /
     autoDeploy: true
@@ -22,8 +24,12 @@ services:
         value: us-west-2
       - key: BEDROCK_MODEL_ID
         value: mistral.mistral-large-3-675b-instruct
+      # Piper, not Polly: Polly has no Hindi male voice and falls back to Kokoro,
+      # which would drag torch back in.
       - key: TTS_BACKEND
-        value: polly
+        value: piper
+      - key: SEPARATE
+        value: "0"
       - key: WHISPER_MODEL
         value: base
       - key: BUFFER_SECONDS
