@@ -311,5 +311,11 @@ class DubSession:
                 done = [s for s in self.segments.values() if lang in s.audio]
                 self.progress.ready_to[lang] = max(s.end for s in done) if done else 0.0
         except Exception as e:
+            # A segment that fails to render has no audio, so manifest() filters it
+            # out entirely and the run looks like it simply produced nothing. Put the
+            # reason where it can actually be seen: the log, and the manifest.
+            traceback.print_exc()
             with self.lock:
                 seg.text.setdefault(lang, f"[{type(e).__name__}]")
+                if not self.progress.error:
+                    self.progress.error = f"render failed ({lang}): {type(e).__name__}: {e}"
