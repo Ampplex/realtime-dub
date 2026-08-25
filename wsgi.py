@@ -33,6 +33,15 @@ CFG.update(
     sep_device=os.environ.get("SEP_DEVICE", "cpu"),
 )
 
-warm_models()
+# Warm-up loads Whisper AND synthesises in every language/gender pair, which pulls
+# all four Piper voices into memory at once — measured 538MB peak, over a 512MB
+# instance, so the worker was OOM-killed at boot and gunicorn crash-looped. On a
+# small box, skip it: the models then load lazily inside the first request, which
+# is slower once but survives.
+if os.environ.get("WARM_MODELS", "1") == "1":
+    warm_models()
+else:
+    print("  warm-up skipped (WARM_MODELS=0): first request will load models.",
+          flush=True)
 
 __all__ = ["app"]

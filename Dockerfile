@@ -39,6 +39,7 @@ ENV PORT=8500 \
     WHISPER_MODEL=base \
     BUFFER_SECONDS=4 \
     ALLOW_LOCAL_PATH=0 \
+    WARM_MODELS=0 \
     PYTHONUNBUFFERED=1 \
     OMP_NUM_THREADS=2
 
@@ -46,5 +47,5 @@ EXPOSE 8500
 
 # ONE worker on purpose — see wsgi.py. Threads carry the concurrency; the long
 # timeout covers large uploads and video range requests.
-CMD gunicorn --workers 1 --threads 8 --timeout 600 \
+CMD gunicorn --workers 1 --threads 4 --timeout 600 \
     --bind "0.0.0.0:${PORT}" --access-logfile - wsgi:app
