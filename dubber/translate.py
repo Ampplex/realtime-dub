@@ -90,13 +90,25 @@ class BedrockTranslator(Translator):
         self.region = region or os.getenv("AWS_REGION", "us-west-2")
         self._rt = boto3.client("bedrock-runtime", region_name=self.region)
         self.leaks = 0          # lines dropped because they could not be cleaned
+        self.last_error: str | None = None   # why the most recent call failed
 
     def available(self) -> bool:
+        """
+        translate() deliberately never raises — it returns "" so one bad line cannot
+        kill a run. That makes "it did not throw" worthless as a health check: with
+        no credentials every call failed, this still returned True, and the session
+        reported translator="bedrock" while silently producing an empty dub. Require
+        actual output.
+        """
         try:
-            self.translate("테스트", "en")
-            return True
-        except Exception:
+            out = self.translate("테스트", "en")
+        except Exception as e:
+            self.last_error = f"{type(e).__name__}: {e}"
             return False
+        if not (out or "").strip():
+            self.last_error = self.last_error or "Bedrock returned an empty translation"
+            return False
+        return True
 
     def translate(self, text: str, target: str, source: str = "ko") -> str:
         text = (text or "").strip()
@@ -133,7 +145,8 @@ class BedrockTranslator(Translator):
                 inferenceConfig={"maxTokens": 220, "temperature": 0.0},
             )
             return _clean(resp["output"]["message"]["content"][0]["text"], text)
-        except Exception:
+        except Exception as e:
+            self.last_error = f"{type(e).__name__}: {e}"
             return ""
 
 
@@ -173,18 +186,22 @@ class OllamaTranslator(Translator):
 
 
 def get_translator(prefer: str = "auto") -> Translator:
+    why = None
     if prefer in ("auto", "bedrock"):
         try:
             t = BedrockTranslator()
             if t.available():
                 return t
-        except Exception:
+            why = t.last_error
+        except Exception as e:
+            why = f"{type(e).__name__}: {e}"
             if prefer == "bedrock":
                 raise
     t = OllamaTranslator()
     if t.available():
         return t
     raise RuntimeError(
+        (f"Bedrock unusable: {why}\n" if why else "") +
         "No translation backend available.\n"
         "  Bedrock: check AWS creds in .env (AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY / AWS_REGION).\n"
         "  Ollama:  no local model present. `ollama pull qwen2.5:3b` for a usable offline\n"
