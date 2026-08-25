@@ -160,12 +160,37 @@ function startPolling() {
   refresh();
 }
 
+// Sessions live in the worker's memory, so a restart (a deploy, an OOM, or a free
+// instance sleeping) destroys them while this page keeps polling. The manifest then
+// 404s forever and the UI just sits there looking like a very slow dub. Say so and
+// hand the upload form back instead.
+function sessionLost() {
+  if (poller) { clearInterval(poller); poller = null; }
+  try { clearScheduled(); } catch {}
+  session = null;
+  anchor = null;
+  try { video.pause(); } catch {}
+  $("stage").hidden = true;
+  $("load-card").hidden = false;
+  if ($("upbar")) $("upbar").hidden = true;
+  if ($("upname")) $("upname").hidden = true;
+  $("load-err").textContent =
+    "Session ended — the server restarted, which clears in-progress dubs. Upload the video again.";
+  $("load-err").hidden = false;
+}
+
 async function refresh() {
   if (!session) return;
   const q = lang === "ko" ? "hi" : lang;      // still track progress while on original
+  let res;
   try {
-    manifest = await (await fetch(`/api/session/${session.id}/manifest?lang=${q}`)).json();
-  } catch { return; }
+    res = await fetch(`/api/session/${session.id}/manifest?lang=${q}`);
+  } catch {
+    return;                       // transient network blip — keep polling
+  }
+  if (res.status === 404) { sessionLost(); return; }
+  if (!res.ok) return;
+  try { manifest = await res.json(); } catch { return; }
   render();
   if (lang !== "ko" && !video.paused) { scheduleAhead(); scheduleBed(); }
 }
