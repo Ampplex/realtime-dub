@@ -181,7 +181,7 @@ function sessionLost() {
 
 async function refresh() {
   if (!session) return;
-  const q = lang === "ko" ? "hi" : lang;      // still track progress while on original
+  const q = lang === "ko" ? "en" : lang;      // still track progress while on original
   let res;
   try {
     res = await fetch(`/api/session/${session.id}/manifest?lang=${q}`);
@@ -225,28 +225,31 @@ function render() {
 
   $("bedbar").hidden = lang === "ko";
 
+  // Viewer-facing wording only. Segment counts and backend names are debugging
+  // detail and mean nothing to someone who just wants to watch the video.
+  const STAGE_TEXT = {
+    "extracting audio": "Reading video…",
+    "separating voice": "Separating voices…",
+    "dubbing": "Preparing dub…",
+  };
   if (manifest.error) {
-    $("status").textContent = "Error: " + manifest.error;
+    $("status").textContent = manifest.error;
+    $("status").classList.add("err");
   } else if (manifest.stage === "complete") {
-    $("status").textContent = `Dub complete · ${manifest.segments.length} segments · `
-      + `${session.translator} + ${session.tts}`;
+    $("status").textContent = "Dub ready";
+    $("status").classList.remove("err");
   } else {
-    $("status").textContent = `${manifest.stage} · dubbed ${ready.toFixed(1)}s`
-      + (total ? ` / ${total.toFixed(1)}s` : "")
-      + ` · need ${BUFFER}s to start · ${session.translator} + ${session.tts}`;
+    const label = STAGE_TEXT[manifest.stage] || "Preparing dub…";
+    $("status").textContent = total ? `${label} ${Math.round(pct)}%` : label;
+    $("status").classList.remove("err");
   }
 
-  const q = lang === "ko" ? "hi" : lang;
-  $("diag").textContent = manifest.segments.slice(-14).map((s) =>
-    `[${s.start.toFixed(2)}-${s.end.toFixed(2)}] slot ${(s.end - s.start).toFixed(2)}s `
-    + `dub ${s.dur.toFixed(2)}s x${s.tempo.toFixed(2)}\n   ko: ${s.source_text}\n   ${q}: ${s.text}`
-  ).join("\n");
 }
 
 // Only governs whether we auto-start playback; it never gates the UI.
 function readyToPlay(l) {
   if (manifest.complete) return true;
-  const target = (l && l !== "ko") ? l : (lang === "ko" ? "hi" : lang);
+  const target = (l && l !== "ko") ? l : (lang === "ko" ? "en" : lang);
   return ((manifest.ready_all || {})[target] ?? 0) >= BUFFER;
 }
 
@@ -470,6 +473,8 @@ video.addEventListener("ratechange", () => {
 });
 video.addEventListener("timeupdate", () => {
   const cur = manifest.segments.find((s) => video.currentTime >= s.start && video.currentTime < s.end);
-  $("caption").textContent = cur ? (lang === "ko" ? cur.source_text : cur.text) : "";
+  const line = cur ? (lang === "ko" ? cur.source_text : cur.text) : "";
+  $("caption").textContent = line;
+  $("caption").classList.toggle("on", !!line);   // empty box otherwise
   if (lang !== "ko" && !video.paused) { scheduleAhead(); scheduleBed(); }
 });

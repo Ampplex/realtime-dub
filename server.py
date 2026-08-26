@@ -69,7 +69,7 @@ def create_session():
     source_lang = request.form.get("source_lang") or "ko"
     try:
         session = DubSession(
-            video=video, work=sdir, langs=("hi", "en"), source_lang=source_lang,
+            video=video, work=sdir, langs=("en",), source_lang=source_lang,
             model_size=CFG["model_size"], buffer_seconds=CFG["buffer"],
             tts_backend=CFG["tts"], translator=CFG["translator"],
             separate=CFG["separate"], sep_device=CFG["sep_device"])

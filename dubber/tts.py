@@ -189,10 +189,15 @@ class PollyBackend(TTSBackend):
     }
     CHARS_PER_SEC = {"hi": 13.27, "en": 18.01}    # measured
 
-    def __init__(self, engine: str = "neural", region: str | None = None,
+    def __init__(self, engine: str | None = None, region: str | None = None,
                  fallback: TTSBackend | None = None):
         import boto3
-        self.engine = engine
+        # `generative` is Polly's most natural engine and all three voices we use
+        # (Kajal, Joanna, Matthew) support it. The catch: it rejects SSML, so the
+        # prosody-rate trick below is refused and duration control falls to the
+        # ffmpeg atempo pass alone. That is the right trade for a demo people
+        # listen to — set POLLY_ENGINE=neural to get SSML timing back.
+        self.engine = engine or os.getenv("POLLY_ENGINE", "generative")
         self.region = region or os.getenv("AWS_REGION", "us-west-2")
         self._polly = boto3.client("polly", region_name=self.region)
         self._fallback = fallback          # covers (hi, male)

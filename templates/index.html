@@ -9,7 +9,7 @@
 <main>
   <header>
     <h1>realtime dub</h1>
-    <p class="sub">Korean video &rarr; live Hindi or English dub</p>
+    <p class="sub">Korean video &rarr; live English dub</p>
   </header>
 
   <section class="card" id="load-card">
@@ -24,7 +24,7 @@
       <button id="load-btn">Load</button>
     </div>
     {% endif %}
-    <p class="hint">you can also drop a file anywhere on this page</p>
+    <p class="hint">or drop a file anywhere on this page</p>
     <div id="upbar" class="upbar" hidden><div id="upfill" class="upfill"></div></div>
     <p id="upname" class="hint" hidden></p>
     <p id="load-err" class="err" hidden></p>
@@ -39,7 +39,6 @@
       <span class="langbar-label">Audio</span>
       <div class="langs">
         <button class="lang active" data-lang="ko">Korean <em>original</em></button>
-        <button class="lang" data-lang="hi">हिन्दी <em>dubbed</em></button>
         <button class="lang" data-lang="en">English <em>dubbed</em></button>
       </div>
     </div>
@@ -56,11 +55,6 @@
     </div>
 
     <p id="caption" class="caption"></p>
-
-    <details class="diag">
-      <summary>Pipeline</summary>
-      <div id="diag"></div>
-    </details>
   </section>
 </main>
 <div id="drop"><span>Drop a video to dub</span></div>
