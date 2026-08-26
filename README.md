@@ -77,6 +77,12 @@ real leak path in an earlier version.
 Verified end to end by transcribing the *rendered output* back: 0 Hangul characters in
 the English track, and 0 Korean speech in the separated background.
 
+## Architecture
+
+[**ARCHITECTURE.md**](ARCHITECTURE.md) covers the full technical design: the sync model
+and why drift cannot accumulate, the concurrency layout, every pipeline stage, and the
+measurements behind each decision.
+
 ## Setup
 
 ```sh
