@@ -27,16 +27,24 @@ COPY . .
 # Bake the weights in. Downloading them on first request instead would make the
 # first user wait minutes, and a restarted container would pay it again.
 RUN ./fetch-voices \
-    && python -c "from faster_whisper import WhisperModel; WhisperModel('base', device='cpu', compute_type='int8')" \
+    && python -c "from faster_whisper import WhisperModel; WhisperModel('base', device='cpu', compute_type='int8'); WhisperModel('tiny', device='cpu', compute_type='int8')" \
     && if [ "$WITH_SEPARATION" = "1" ]; then \
          python -c "from demucs.pretrained import get_model; get_model('htdemucs')" ; \
        fi
 
+# Defaults sized for a 512MB instance. Measured peak RSS on the 40s clip:
+#   base  + unbounded voice cache = 538MB  (OOM on 512MB)
+#   base  + PIPER_VOICE_CACHE=1   = 847MB  (worse — base's decode arena is the cost,
+#                                           not its weights)
+#   tiny  + PIPER_VOICE_CACHE=1   = 293MB  (fits)
+# On a 2GB+ host raise these: WHISPER_MODEL=base, PIPER_VOICE_CACHE=4, and for the
+# full pipeline SEPARATE=1 + TTS_BACKEND=polly with --build-arg WITH_SEPARATION=1.
 ENV PORT=8500 \
     HOST=0.0.0.0 \
     TTS_BACKEND=piper \
     SEPARATE=0 \
-    WHISPER_MODEL=base \
+    WHISPER_MODEL=tiny \
+    PIPER_VOICE_CACHE=1 \
     BUFFER_SECONDS=4 \
     ALLOW_LOCAL_PATH=0 \
     WARM_MODELS=0 \

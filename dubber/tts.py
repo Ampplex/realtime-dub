@@ -66,14 +66,24 @@ class TTSBackend(ABC):
 
 
 class PiperBackend(TTSBackend):
-    """Self-hosted ONNX voices. Voices are cached — loading costs ~0.5s each."""
+    """
+    Self-hosted ONNX voices, cached because loading costs ~0.5s each.
+
+    The cache is BOUNDED. Casting both genders in both languages touches four
+    voices, and an unbounded cache kept every one resident — roughly 250MB of ONNX
+    on top of Whisper, which is what pushed a 512MB instance over the edge. Holding
+    two covers the common case (one language, both genders) with no reloads;
+    PIPER_VOICE_CACHE=1 trades a ~0.5s reload on each gender change for ~60MB.
+    """
     name = "piper"
     CHARS_PER_SEC = {"hi": 11.47, "en": 18.56}     # measured
 
     def __init__(self, voices: dict | None = None):
         from piper import PiperVoice  # noqa: F401  (import cost paid once)
+        import collections
         self.voices = voices or PIPER_VOICES
-        self._cache: dict = {}
+        self._cache: "collections.OrderedDict" = collections.OrderedDict()
+        self._max_cache = max(1, int(os.getenv("PIPER_VOICE_CACHE", "2")))
 
     def _resolve(self, lang: str, gender: str) -> str:
         name = self.voices.get((lang, gender))
@@ -87,10 +97,17 @@ class PiperBackend(TTSBackend):
 
     def _voice(self, lang: str, gender: str):
         name = self._resolve(lang, gender)
-        if name not in self._cache:
-            from piper import PiperVoice
-            self._cache[name] = PiperVoice.load(str(VOICES_DIR / f"{name}.onnx"))
-        return self._cache[name]
+        cached = self._cache.get(name)
+        if cached is not None:
+            self._cache.move_to_end(name)          # mark as most recently used
+            return cached
+
+        from piper import PiperVoice
+        voice = PiperVoice.load(str(VOICES_DIR / f"{name}.onnx"))
+        self._cache[name] = voice
+        while len(self._cache) > self._max_cache:
+            self._cache.popitem(last=False)        # drop least recently used
+        return voice
 
     def synth(self, text: str, lang: str, out: Path, length_scale: float = 1.0,
               gender: str = "female") -> Path:

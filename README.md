@@ -199,7 +199,19 @@ On Render, `render.yaml` is a blueprint — point **New > Blueprint** at this re
 and set `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` in the dashboard. Any other
 container host (Railway, Fly.io, Cloud Run) works the same way from the Dockerfile.
 
-**Memory is the sizing constraint,** not CPU: demucs, Whisper and Kokoro are all
+**Memory, measured on the 40s clip** (peak RSS, lean build):
+
+| config | peak | verdict |
+|---|---|---|
+| whisper base, unbounded voice cache | 538MB | OOMs a 512MB instance |
+| whisper base, `PIPER_VOICE_CACHE=1` | 847MB | worse — base's decode arena, not its weights |
+| whisper tiny, `PIPER_VOICE_CACHE=1` | 293MB | fits 512MB |
+
+The Piper voice cache is the lever that matters: casting both genders in both
+languages touches four ONNX voices and an unbounded cache kept every one resident.
+`tiny` costs real Korean accuracy, so raise it to `base` the moment you have 2GB.
+
+**On the full pipeline,** not the lean one: demucs, Whisper and Kokoro are all
 resident at once, so a 512MB instance cannot start. 2GB is the floor, 4GB is
 comfortable — which rules out the usual free tiers.
 
