@@ -22,7 +22,17 @@ RUN if [ "$WITH_SEPARATION" = "1" ]; then \
         pip install --no-cache-dir -r requirements.txt ; \
     fi
 
-COPY . .
+# Hugging Face Spaces runs containers as uid 1000, not root, and Render is happy
+# to as well. Create the user BEFORE baking the models: the weights must land in
+# the cache the RUNTIME user reads, or they silently re-download on every cold
+# start and the baking was pointless.
+RUN useradd -m -u 1000 appuser
+ENV HOME=/home/appuser \
+    HF_HOME=/home/appuser/.cache/huggingface
+
+COPY --chown=appuser:appuser . .
+RUN mkdir -p /app/work && chown -R appuser:appuser /app
+USER appuser
 
 # Bake the weights in. Downloading them on first request instead would make the
 # first user wait minutes, and a restarted container would pay it again.

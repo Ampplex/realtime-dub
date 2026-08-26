@@ -1,3 +1,13 @@
+---
+title: Realtime Dub
+emoji: 🎬
+colorFrom: indigo
+colorTo: purple
+sdk: docker
+app_port: 8500
+short_description: Korean video to live Hindi or English dub
+---
+
 # realtime-dub
 
 Korean video → live Hindi or English dub, in the browser.
