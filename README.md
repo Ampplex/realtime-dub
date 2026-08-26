@@ -1,248 +1,169 @@
----
-title: Realtime Dub
-emoji: 🎬
-colorFrom: indigo
-colorTo: purple
-sdk: docker
-app_port: 8500
-short_description: Korean video to live Hindi or English dub
----
-
 # realtime-dub
 
-Korean video → live Hindi or English dub, in the browser.
+Korean video → live English dub, in the browser. Upload a clip, hit play, and switch
+between the original audio and a dubbed track while it is still being generated.
 
-Plays the original for the first few seconds while the pipeline builds a buffer;
-switching language restarts playback with the dubbed track and keeps rendering
-chunks ahead of the playhead.
+The interesting problem here is not "call an ASR API and a TTS API". It is keeping a
+generated audio track **in sync with a video that is already playing**, on a pipeline
+that is still producing that audio a few seconds ahead of the playhead.
+
+```
+video  ──────────────────────────────────────────────▶ playhead
+dub    ████████████████░░░░░░                          ▲
+       already voiced   being voiced now          ~4s buffer
+```
 
 ## How it performs
 
-Measured on an M1 / 8GB, 40s of real dialogue-dense video, both languages at once:
+Measured on an M1/8GB against 40s of dialogue-dense video:
 
 | | value |
 |---|---|
-| time to first dubbed audio | **5.5s** (warm) |
-| sustained throughput | **1.20x realtime** (sustains, does not stall) |
-| model warm-up | 3.7s, once at boot |
+| time to first dubbed audio | **~5s** (warm) |
+| sustained throughput | **1.1–1.25× realtime** |
+| segments recovered from 40s | 20 |
+| Korean leaking into the English track | 0 |
 
-Time-to-first-audio is bounded by the **window size, not the video length** - a
-3-minute video starts just as fast as a 40-second one. Because throughput exceeds
-realtime, the buffer grows while you watch instead of draining, so the default
-buffer is only 4s.
+Time-to-first-audio is bounded by the **window size, not the video length** — a
+3-minute video starts as fast as a 40-second one. Because throughput exceeds
+realtime, the buffer grows while you watch rather than draining.
 
-## Why this is tractable
+## Why look-ahead, not "realtime"
 
-The whole file is on disk, so this is **look-ahead dubbing**, not live dubbing. The
-pipeline runs *ahead* of the playhead and the buffer is permanent headroom that
-workers keep refilling. Measured end to end on an M1/8GB: **1.34× realtime for both
-languages at once**.
+The whole file is on disk, so this is **look-ahead dubbing**. The pipeline runs *ahead*
+of the playhead and the buffer is permanent headroom that workers keep refilling. That
+is what makes the sync problem tractable at all.
 
-## Stack (measured, not guessed)
+## Stack
 
-| Stage | Choice | Throughput |
+| Stage | Choice | Why |
 |---|---|---|
-| STT | faster-whisper `base`, int8 (no torch) | 7.6× realtime |
-| Translate | Bedrock `amazon.nova-lite-v1:0` | 0.6 s/line, ~14× with fan-out |
-| TTS | Piper ONNX (`hi_IN-pratham`, `en_US-lessac`) | 10–29× realtime |
+| Separation | demucs `htdemucs` | removes the original dialogue so it is a dub, not a voice-over |
+| ASR | faster-whisper `small`, int8 | CTranslate2, no torch; streams segments as it decodes |
+| Translate | Amazon Bedrock (`mistral-large-3`) | ~0.6s/line, parallelised |
+| TTS | Amazon Polly (generative) | natural, network-bound, so it leaves CPU for demucs |
 
-Whisper `base` beat `small`: faster **and** better segmented. `small` merged three
-sentences into one 5.5 s blob, which makes sync coarse. Sentence-level segments let
-each line land on its own timestamp.
-
-ASR runs **once** and fans out to both languages, so Hindi alongside English costs a
+ASR runs **once** and fans out to every target language, so a second language costs a
 translate+TTS pass, not a second transcription.
-
-## Setup
-
-```sh
-python3 -m venv .venv
-./.venv/bin/pip install -r requirements.txt
-./fetch-voices                 # Piper voices, ~124 MB
-cp .env.example .env           # add AWS creds
-```
-
-## Run
-
-```sh
-./run                          # http://127.0.0.1:8500
-./run --model small            # more accurate ASR, coarser segments
-./run --buffer 5               # seconds to build before playback (2-10)
-./run --translator ollama      # offline fallback (degraded, see below)
-./run --tts say                # macOS dev fallback
-```
-
-Paste a path or drag a video onto the page. Pick **Korean / हिन्दी / English**.
 
 ## How sync works
 
 The video clock is the source of truth; audio bends to it. Each segment is scheduled at
 
 ```
-anchor.ctxTime + (segment.start - anchor.videoTime)
+anchor.ctxTime + (segment.start − anchor.videoTime)
 ```
 
 so it is pinned to its position on the **source** timeline. Drift cannot accumulate,
-because segments are scheduled against the anchor independently rather than relative
-to each other. Pause, seek, rate change and language switch invalidate the anchor.
+because segments are scheduled against the anchor independently rather than relative to
+each other. Pause, seek, rate change and language switch all invalidate the anchor.
 
-Duration fitting is two-stage: Piper's `length_scale` (drives the duration predictor,
-so formants stay intact) with an ffmpeg `atempo` trim after. Stretch is clamped to
-0.70–1.45 — past that speech stops sounding human, so overrun is absorbed by the
-silence that follows instead.
+Duration fitting is two-stage: the backend's speaking-rate prior picks an initial
+length, then an ffmpeg `atempo` pass trims the result to its slot. Stretch is clamped —
+past the clamp speech stops sounding human, so overrun is absorbed by the silence that
+follows instead.
 
-## Known limits
-
-- **Translation is the bottleneck** at ~0.6 s/line. A long video with dense dialogue
-  will build buffer more slowly than a sparse one.
-- **Lines may end early, by design.** A line is sped up to fit its slot but never
-  slowed to fill one. Stretching short translations to pad the slot is what made the
-  voice drawl; a short line simply finishes early and the bed carries the gap.
-- **No speaker diarisation.** One voice for everyone, regardless of who is talking.
-- **Ducking is the fallback, not the default.** With `--no-separate` The source is no longer muted: it plays as a bed under
-  the dub and dips while each line speaks, so music and effects survive. The original
-  Korean dialogue stays faintly audible underneath (voice-over / lektor style).
-  Removing it entirely needs stem separation - see below.
-- **Local fallback is degraded.** `llama3.2:1b` failed badly on ko→hi in testing —
-  emitted Thai script, leaked Korean, hallucinated refusals. Bedrock is the real path.
-- **`nova-micro` is not enabled** on this account; `mistral-large-2407` throttles hard
-  on Hindi (8.3 s/line, half the calls failed). `nova-lite` was the smallest that worked.
+**Lines may end early, by design.** A line is sped up to fit its slot but never slowed to
+fill one. Stretching a short translation to pad the slot is what made the voice drawl.
 
 ## Script-leak guard
 
-Untranslated Korean must never reach a Hindi or English voice. Every translation is
-checked for Hangul/CJK/kana (and Devanagari in English output); on a hit it retries
-once with a stricter prompt, then sanitises, and if it still cannot produce clean
-text it returns **empty and the line is skipped** - the bed keeps playing. Critically
-it never falls back to the source line, which was a real leak path in an earlier
-version. Verified end to end: whisper hears 0 Hangul characters in either render.
+Untranslated Korean must never reach an English voice. Every translation is checked for
+Hangul/CJK/kana; on a hit it retries once with a stricter prompt, then sanitises, and if
+it still cannot produce clean text it returns **empty and the line is skipped** — the
+background keeps playing. Critically it never falls back to the source line, which was a
+real leak path in an earlier version.
 
-`mistral-large-3` also obeys the write-numbers-as-words rule that nova-lite ignored,
-which removes digit mispronunciation ("3:30" -> "तीन बजकर तीस मिनट").
+Verified end to end by transcribing the *rendered output* back: 0 Hangul characters in
+the English track, and 0 Korean speech in the separated background.
 
-## TTS backends
-
-`--tts polly` (default) is the most natural and the only combination that both sounds
-good and sustains above realtime. Polly is network-bound, so it parallelises and
-leaves the CPU free for demucs - which is what makes the stage overlap pay off.
-
-| backend | throughput | notes |
-|---|---|---|
-| `polly` | 1.23x | natural; needs AWS creds; **no Hindi male voice** |
-| `kokoro` | 0.73x | natural, fully local, but stalls on long video |
-| `piper` | 1.38x | fastest, fully local, robotic |
-| `say` | - | macOS dev only |
-
-Polly has no Hindi male voice (Aditi/Kajal/Raveena are all female, and are filed
-under `en-IN`, not `hi-IN`), so `(hi, male)` falls back to Kokoro's `hm_omega`
-automatically and gender casting still works.
-
-## Pipeline shape
-
-Everything is windowed. Each window is separated, transcribed, translated and voiced
-before the next is touched, so audio becomes playable in window-time:
-
-```
-window N: demucs ─┬─> bed  (music + effects, full level)
-                  └─> vocals ──> whisper ──> gender (F0) ──> translate ──> TTS
-```
-
-Separation runs on its own thread, producing windows into a bounded queue while the
-main loop consumes them. Running the stages in sequence made throughput the SUM of
-every stage cost (0.89x); overlapping makes it the slowest single stage (1.23x).
-
-An earlier version ran separation as a blocking pre-pass over the whole file. That
-worked but destroyed streaming: nothing was playable until the last frame was
-separated (~190s for a 40s clip). Windowing restored it.
-
-**Voice casting.** Median F0 over the voiced frames of each segment picks a male or
-female voice (boundary 158 Hz, which sits in the empty gap between the two clusters
-on real material). This must run on the **separated vocals**, not the mix - music
-energy sits in the same F0 band and turns the result into a coin flip.
-
-**Duration fitting is two-pass.** Guess a `length_scale` from the backend's measured
-speaking rate, synthesise, then re-synthesise only if the result is outside
-0.82-1.22x of its slot. Below that the time stretcher is transparent and a second
-synthesis is wasted compute. Measured rates (chars/sec at scale 1.0):
-
-| | Hindi | English |
-|---|---|---|
-| Kokoro | 8.93 | 14.06 |
-| Piper | 11.47 | 18.56 |
-
-Using one prior for both backends is what previously crushed 7 of 16 Hindi lines
-against the compressor limit; per-backend rates plus the corrective pass took that
-to 0-1.
-
-## Removing the original dialogue (optional, not installed)
-
-Ducking keeps music and effects but leaves the source voice audible underneath. To
-strip dialogue properly you need stem separation:
+## Setup
 
 ```sh
-pip install demucs          # ~2 GB with torch
+python3 -m venv .venv
+./.venv/bin/pip install -r requirements-full.txt   # includes demucs/torch
+./fetch-voices                                     # Piper voices (local TTS fallback)
+cp .env.example .env                               # add AWS credentials
+brew install ffmpeg
 ```
 
-Run it as a **pre-pass, not in the realtime loop**: `htdemucs` runs ~0.3-1x realtime on
-an M1 CPU, so it is slower than playback and would break the look-ahead. Separate once,
-cache the `no_vocals` stem, then use that as the bed. Costs an upfront wait per video;
-worth it on a GPU box.
+`.env` needs `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` with access to Bedrock
+(translation) and Polly (voices).
+
+## Run
+
+```sh
+./run                                  # http://127.0.0.1:8500
+./run --model base                     # faster ASR, less accurate on proper nouns
+./run --no-separate                    # skip demucs: much lighter, but the Korean
+                                       # stays audible under the dub
+./run --tts piper                      # fully local voices, no AWS
+```
+
+Then drop a Korean clip on the page.
+
+## Configuration
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `TTS_BACKEND` | `polly` | `polly` / `piper` / `kokoro` / `say` |
+| `POLLY_ENGINE` | `generative` | `neural` restores SSML duration control |
+| `POLLY_FALLBACK` | `kokoro` | `none` avoids pulling torch in for one voice |
+| `ASR_BACKEND` | `whisper` | `transcribe` uses Amazon Transcribe (no local model) |
+| `WHISPER_MODEL` | `small` | `tiny` fits small instances but segments badly |
+| `SEPARATE` | `1` | `0` ducks the original instead of removing it |
+| `ALLOW_LOCAL_PATH` | `0` | dev only — see below |
+
+## What the measurements taught us
+
+Most of the design here came from being wrong first:
+
+- **Whisper `base` beat `small` on segmentation but loses proper nouns.** `small` reads
+  `서울대 로스쿨 졸업생 강휴민입니다` correctly; `base` garbles the name. `tiny` collapses
+  40s into 2 segments, which destroys sync entirely.
+- **An unbounded TTS voice cache cost ~250MB.** Casting both genders in two languages
+  touches four ONNX voices and every one stayed resident. Bounding it took peak RSS from
+  538MB to 293MB.
+- **Polly's Kokoro fallback cost ~800MB** — torch, loaded at startup to cover a single
+  missing voice, whether or not that voice was ever used.
+- **Running stages in sequence made throughput the SUM of every stage** (0.89×);
+  overlapping them makes it the slowest single stage (1.23×).
+- **Memory, not CPU, is the binding constraint.** demucs + Whisper + voices is ~1.6GB;
+  below that the machine swaps and everything looks "slow" for reasons no profiler
+  attributes to the code.
+
+## Security note
+
+The `path=` parameter lets the server open an arbitrary local file and serves it back
+via `/api/session/<id>/video` — arbitrary file disclosure on a public host. It is off
+unless `ALLOW_LOCAL_PATH=1`, which belongs on a development machine and nowhere else.
+Hosted instances accept uploads only.
 
 ## Deploying
 
-Deployed from the `Dockerfile`; the image carries ffmpeg and bakes the Whisper,
-demucs and Piper weights so the first request does not wait on a download.
+Runs from the `Dockerfile`. **Not deployable to serverless** (Vercel and friends): torch
+alone exceeds a 250MB function limit, ffmpeg is shelled out to, and sessions are
+in-process state with background threads that outlive the response.
 
-**Not deployable to Vercel** (or any serverless platform), for four independent
-reasons: torch alone is ~500MB against a 250MB function limit; ffmpeg is shelled
-out to 9 times and is not in the runtime; sessions live in process memory with
-background threads that keep working for minutes after the response is sent; and
-request bodies are capped at 4.5MB, well under a real video upload. It needs a
-container with a persistent process.
+Sizing is about memory:
 
-```sh
-docker build -t realtime-dub .
-docker run -p 8500:8500 --env-file .env realtime-dub
-```
+| config | peak RSS |
+|---|---|
+| whisper `small` + demucs + Polly | ~1.6GB |
+| whisper `tiny` + Piper, no separation | 293MB |
+| `ASR_BACKEND=transcribe` + Polly | no resident models |
 
-On Render, `render.yaml` is a blueprint — point **New > Blueprint** at this repo
-and set `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` in the dashboard. Any other
-container host (Railway, Fly.io, Cloud Run) works the same way from the Dockerfile.
+Run exactly **one** worker (see `wsgi.py`): sessions live in a module-level dict, so a
+second worker would answer polls for sessions it has never seen. Concurrency comes from
+threads.
 
-**Memory, measured on the 40s clip** (peak RSS, lean build):
+## Known limits
 
-| config | peak | verdict |
-|---|---|---|
-| whisper base, unbounded voice cache | 538MB | OOMs a 512MB instance |
-| whisper base, `PIPER_VOICE_CACHE=1` | 847MB | worse — base's decode arena, not its weights |
-| whisper tiny, `PIPER_VOICE_CACHE=1` | 293MB | fits 512MB |
-
-The Piper voice cache is the lever that matters: casting both genders in both
-languages touches four ONNX voices and an unbounded cache kept every one resident.
-`tiny` costs real Korean accuracy, so raise it to `base` the moment you have 2GB.
-
-**On the full pipeline,** not the lean one: demucs, Whisper and Kokoro are all
-resident at once, so a 512MB instance cannot start. 2GB is the floor, 4GB is
-comfortable — which rules out the usual free tiers.
-
-Run exactly **one** worker (`wsgi.py` explains why): sessions are a module-level
-dict, so a second worker would answer polls for sessions it has never seen.
-Concurrency comes from threads instead.
-
-### Uploads and the local-path route
-
-A hosted instance accepts **uploads only**. The `path=` route that the CLI-ish
-local flow uses reads an arbitrary server path and hands the bytes straight back
-via `/api/session/<id>/video`, so on a public host it is arbitrary file
-disclosure — `path=/proc/self/environ` would surrender the AWS keys. It is off
-unless `ALLOW_LOCAL_PATH=1`, which belongs on your laptop and nowhere else.
-
-## Notes on the original deployment sketch
-
-Piper and faster-whisper are both CPU-only and Linux-friendly, so a container works.
-Three things to change:
-
-1. `.env` — inject AWS creds as real secrets, never a file in the image.
-2. Bake voices + the Whisper model into the image so the first request isn't a download.
-3. Flask's dev server is single-process; put gunicorn in front and give sessions a
-   real store (they are in-memory here and die with the process).
+- **No speaker diarisation** — one voice per gender, regardless of who is talking.
+- **Gender casting is F0-based** (boundary 158 Hz) and must run on separated vocals;
+  on a mix, music energy sits in the same band and makes it a coin flip.
+- **Translation occasionally emits meta-text** (`"Sure, please provide the subtitle
+  lines."`) for very short inputs like `네`. The script-leak guard does not catch this,
+  because the output is valid English.
+- **Hindi is disabled.** The code still maps Hindi voices, but Polly exposes no `hi-IN`
+  voice, so Hindi male fell through to a torch-backed local model for one voice.
