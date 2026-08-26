@@ -72,3 +72,28 @@ class WhisperASR:
     def detect_language(self, audio: Path) -> tuple[str, float]:
         _segments, info = self.model.transcribe(str(audio), beam_size=1, vad_filter=True)
         return info.language, float(info.language_probability)
+
+
+def get_asr(model_size: str = DEFAULT_MODEL, prefer: str | None = None):
+    """
+    Pick an ASR backend.
+
+    `transcribe` holds no model at all, which is the whole point on a small
+    instance: faster-whisper is the last resident model in an otherwise
+    cloud-only pipeline (Bedrock for translation, Polly for voices), and even
+    `tiny` costs enough to put a 512MB box at risk.
+
+    Falls back to Whisper when Transcribe is not usable — an AWS account without
+    the service enabled answers with SubscriptionRequiredException — so a missing
+    subscription degrades instead of breaking the app.
+    """
+    import os
+    prefer = (prefer or os.getenv("ASR_BACKEND", "whisper")).lower()
+    if prefer in ("transcribe", "aws", "cloud"):
+        try:
+            from .asr_cloud import TranscribeASR
+            return TranscribeASR()
+        except Exception:
+            if prefer != "cloud":
+                raise
+    return WhisperASR(model_size=model_size)

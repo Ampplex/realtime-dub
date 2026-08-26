@@ -279,10 +279,17 @@ def _build_backend(name: str = "auto") -> TTSBackend:
     if name in ("auto", "polly"):
         try:
             local = None
-            try:
-                local = KokoroBackend()       # covers the missing Hindi male voice
-            except Exception:
-                pass
+            # Kokoro exists only to cover (hi, male), which Polly has no voice for —
+            # but it is torch-backed, and building it costs ~800MB resident whether
+            # or not a single Hindi male line is ever spoken. Measured: Polly with
+            # this fallback peaked at 1102MB on the 40s clip; without it, Polly is
+            # pure network. On a small instance set POLLY_FALLBACK=none and accept
+            # that Hindi male lines are voiced by the female Hindi voice.
+            if os.getenv("POLLY_FALLBACK", "kokoro").lower() not in ("none", "0", ""):
+                try:
+                    local = KokoroBackend()
+                except Exception:
+                    pass
             b = PollyBackend(fallback=local)
             if b.available():
                 return b

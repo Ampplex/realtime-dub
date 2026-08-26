@@ -128,12 +128,12 @@ def warm_models() -> None:
     def _warm():
         try:
             from pathlib import Path
-            from dubber.asr import WhisperASR
+            from dubber.asr import get_asr
             from dubber.tts import get_backend
             from dubber.separate import _get_model
             import tempfile, time
             t0 = time.perf_counter()
-            WhisperASR(model_size=CFG["model_size"]).model
+            get_asr(model_size=CFG["model_size"]).model   # None for Transcribe
             if CFG["separate"]:
                 _get_model()
 

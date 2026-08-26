@@ -27,7 +27,7 @@ import traceback
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from .asr import WhisperASR
+from .asr import WhisperASR, get_asr
 from .audio import extract_audio, probe_duration, wav_duration, fit_duration, OUT_SR, run
 from .models import Segment, Progress
 from .separate import Separator
@@ -56,7 +56,7 @@ class DubSession:
         for l in self.langs:
             (self.work / l).mkdir(exist_ok=True)
 
-        self.asr = WhisperASR(model_size=model_size)
+        self.asr = get_asr(model_size=model_size)
         self.tts = get_backend(tts_backend)
         self.translator = get_translator(translator)
 
